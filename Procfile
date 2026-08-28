@@ -1,1 +1,1 @@
-web: python tools/apply_runtime_stability_v1.py --app app.py && python tools/apply_manual_refresh_state_v2.py --app app.py && python tools/apply_ud20_opponent_k_pipeline_cleanup_v1.py --app app.py && streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
+web: python tools/launch_stable.py
