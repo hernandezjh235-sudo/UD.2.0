@@ -1,0 +1,117 @@
+name: Undefeated 2.0 Savant Data Sync
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Challenger refreshes at 05:00 UTC; sync the validated files 30 minutes later.
+    - cron: '30 5 * * *'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/sync_savant_ud20.py'
+      - '.github/workflows/refresh_savant_ud20.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ud20-savant-sync-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Undefeated 2.0
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install sync dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pandas requests
+
+      - name: Sync validated Baseball Savant data
+        run: python tools/sync_savant_ud20.py
+
+      - name: Validate Undefeated 2.0 Savant outputs
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from datetime import datetime, timezone
+          import json
+          import pandas as pd
+
+          season = max(2026, datetime.now(timezone.utc).year)
+          root = Path('learning_data')
+          active = [
+              f'savant_batter_platoon_{season}.csv',
+              'savant_batter_profiles.csv',
+              'savant_pitcher_stats.csv',
+              'pitch_mix_matchups.csv',
+          ]
+          minimums = {
+              active[0]: 400,
+              active[1]: 400,
+              active[2]: 400,
+              active[3]: 300,
+          }
+          frames = {}
+          for name in active:
+              p = root / name
+              assert p.exists() and p.stat().st_size > 20, f'missing/empty {name}'
+              lg = root / name.replace('.csv', '.last_good.csv')
+              assert lg.exists(), f'missing LAST_GOOD {lg.name}'
+              assert p.read_bytes() == lg.read_bytes(), f'active/LAST_GOOD mismatch: {name}'
+              df = pd.read_csv(p)
+              assert len(df) >= minimums[name], (name, len(df), minimums[name])
+              frames[name] = df
+
+          platoon = frames[active[0]]
+          required_platoon = {
+              'mlbam_id','player_name','season','vs_rhp_pa','vs_rhp_k_pct',
+              'vs_lhp_pa','vs_lhp_k_pct'
+          }
+          assert required_platoon.issubset(platoon.columns), 'platoon schema missing required fields'
+          for name, df in frames.items():
+              seasons = set(pd.to_numeric(df['season'], errors='coerce').dropna().astype(int).tolist())
+              assert season in seasons, f'{name}: season {season} missing'
+
+          for manifest_name in ('savant_refresh_manifest.json', 'savant_aux_refresh_manifest.json'):
+              obj = json.loads((root / manifest_name).read_text())
+              assert int(obj.get('season')) == season, f'{manifest_name}: wrong season'
+              assert obj.get('status') == 'CURRENT', f'{manifest_name}: not CURRENT'
+
+          print('UD2 Savant validated', {k: len(v) for k, v in frames.items()})
+          PY
+
+      - name: Commit refreshed Savant files
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          YEAR=$(date -u +%Y)
+          if [ "$YEAR" -lt 2026 ]; then YEAR=2026; fi
+          git add \
+            "learning_data/savant_batter_platoon_${YEAR}.csv" \
+            "learning_data/savant_batter_platoon_${YEAR}.last_good.csv" \
+            learning_data/savant_batter_profiles.csv \
+            learning_data/savant_batter_profiles.last_good.csv \
+            learning_data/savant_pitcher_stats.csv \
+            learning_data/savant_pitcher_stats.last_good.csv \
+            learning_data/pitch_mix_matchups.csv \
+            learning_data/pitch_mix_matchups.last_good.csv \
+            learning_data/savant_refresh_manifest.json \
+            learning_data/savant_aux_refresh_manifest.json
+          if git diff --cached --quiet; then
+            echo 'Undefeated 2.0 Savant data already current.'
+          else
+            git commit -m 'Refresh Undefeated 2.0 Savant data'
+            git push origin HEAD:main
+          fi
