@@ -18,7 +18,9 @@ shutil.copy2(SOURCE, RUNTIME)
 
 PATCHES = [
     "tools/apply_runtime_stability_v1.py",
+    "tools/apply_runtime_stability_v2.py",
     "tools/apply_manual_refresh_state_v2.py",
+    "tools/apply_savant_manual_only_v3.py",
     "tools/apply_ud20_opponent_k_pipeline_cleanup_v1.py",
 ]
 
