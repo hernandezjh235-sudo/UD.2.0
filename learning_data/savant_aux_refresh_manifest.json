@@ -1,0 +1,13 @@
+{
+  "status": "CURRENT",
+  "season": 2026,
+  "updated_at": "2026-08-28T03:47:02+00:00",
+  "source": "VALIDATED_CHALLENGER_BASEBALL_SAVANT_FEED",
+  "ud20": true,
+  "files": {
+    "savant_batter_platoon_2026.csv": 639,
+    "savant_batter_profiles.csv": 639,
+    "savant_pitcher_stats.csv": 781,
+    "pitch_mix_matchups.csv": 3528
+  }
+}
