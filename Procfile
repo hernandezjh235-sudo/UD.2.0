@@ -1,1 +1,1 @@
-web: streamlit run app.py --server.port $PORT --server.address 0.0.0.0
+web: python tools/sync_savant_ud20.py && streamlit run app.py --server.port $PORT --server.address 0.0.0.0
