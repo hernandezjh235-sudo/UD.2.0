@@ -115,7 +115,6 @@ def _publish(stage: Path, counts: dict):
             if os.path.exists(tmp):
                 os.unlink(tmp)
 
-    # Normalize UD2 manifests after the validated live refresh.
     manifest = {
         "status": "CURRENT",
         "season": SEASON,
@@ -163,9 +162,10 @@ def main():
             print("UD2 live Savant refresh READY", json.dumps(counts))
             return 0
     except Exception as exc:
-        # Non-destructive: prior validated active/LAST_GOOD data remains intact.
+        # Non-destructive: prior validated active/LAST_GOOD data remains intact,
+        # but return nonzero so the board-refresh status reports the live refresh failure.
         print(f"UD2 live Savant refresh WARNING: {type(exc).__name__}: {exc}")
-        return 0
+        return 1
 
 
 if __name__ == "__main__":
