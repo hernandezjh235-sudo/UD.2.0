@@ -24,6 +24,10 @@ try:
 except Exception:
     pass
 
+import subprocess as _manual_savant_subprocess
+import sys as _manual_savant_sys
+
+
 def _manual_only_savant_background_worker(*args, **kwargs):
     return {
         "status": "SKIPPED",
@@ -31,11 +35,77 @@ def _manual_only_savant_background_worker(*args, **kwargs):
         "reason": "Passive/background Savant refresh disabled",
     }
 
-# The large shared app has a daemon worker that can otherwise refresh Savant on
-# ordinary Streamlit reruns. Rebinding the worker leaves cached data reads intact
-# and does not affect _state_v2_refresh_savant_for_board().
 if "_v2610_refresh_savant_worker" in globals():
     _v2610_refresh_savant_worker = _manual_only_savant_background_worker
+
+
+def _manual_only_live_board_savant_refresh():
+    """One live Savant refresh, called only by the explicit board-refresh button."""
+    root = Path(__file__).resolve().parent
+    result = {"mode": "CACHE_ONLY", "ok": True}
+    try:
+        ud_sync = root / "tools" / "sync_savant_ud20.py"
+        ch_live = root / "tools" / "refresh_savant_installer_v5.py"
+        if ud_sync.exists():
+            cmd = [_manual_savant_sys.executable, str(ud_sync)]
+            mode = "UD2_LIVE_SAVANT_ON_BOARD_REFRESH"
+        elif ch_live.exists():
+            cmd = [
+                _manual_savant_sys.executable, str(ch_live),
+                "--out", str(root / "learning_data"),
+            ]
+            mode = "CHALLENGER_LIVE_SAVANT_ON_BOARD_REFRESH"
+        else:
+            cmd = None
+            mode = "SERVICE_REFRESH_ON_BOARD_REFRESH"
+
+        if cmd is not None:
+            proc = _manual_savant_subprocess.run(
+                cmd,
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                timeout=720,
+            )
+            result = {
+                "mode": mode,
+                "ok": proc.returncode == 0,
+                "detail": (proc.stdout or proc.stderr or "")[-1200:],
+            }
+        else:
+            svc = globals().get("_v269_savant_service")
+            aux = globals().get("_v2610_savant_aux_service")
+            if callable(svc):
+                svc().refresh(force=True)
+            if callable(aux):
+                aux().refresh(force=True)
+            result = {"mode": mode, "ok": True}
+
+        for name in (
+            "_v269_load_savant_platoon", "_savant_aux_bundle_cached",
+            "_v2610_savant_aux_bundle", "_v2610_load_savant_aux",
+        ):
+            obj = globals().get(name)
+            try:
+                if hasattr(obj, "clear"):
+                    obj.clear()
+            except Exception:
+                pass
+    except Exception as exc:
+        result = {
+            "mode": "BOARD_REFRESH_SAVANT_WARNING",
+            "ok": False,
+            "message": str(exc),
+        }
+    try:
+        st.session_state["manual_refresh_v2_savant"] = result
+        st.session_state["savant_refresh_policy"] = "BOARD_REFRESH_ONLY"
+    except Exception:
+        pass
+    return result
+
+if "_state_v2_refresh_savant_for_board" in globals():
+    _state_v2_refresh_savant_for_board = _manual_only_live_board_savant_refresh
 
 try:
     st.session_state.setdefault("savant_refresh_policy", "BOARD_REFRESH_ONLY")
@@ -48,7 +118,6 @@ def patch_text(text: str) -> str:
     if MARKER in text:
         return text
     text = text.replace("\r\n", "\n")
-
     due_pat = r'due\s*=\s*bool\(\s*unresolved\s*or\s*health\.get\("status"\)\s*not\s*in\s*\{"CURRENT"\}\s*or\s*not\s*all_aux_current\s*or\s*due_by_time\s*\)'
     text = re.sub(
         due_pat,
